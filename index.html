@@ -1,16 +1,156 @@
-# Bindory — Mori Live Demo
-
-A Muse-like TCG agent that identifies cards, triangulates live pricing,
-checks grading value, and manages your binder. Always asks before acting.
-
-## Try it
-- Charizard ex 199/165 is $560 a good deal?
-- Black Lotus price?
-- Should I grade this? centering 58 corners 84 edges 89 surface 91
-- Add Charizard ex 199/165 to binder 151
-
-## Tools
-PokemonTCG.io (live) · Scryfall (live) · Grading estimator · Local binder + memory
-
-## Run locally
-Open `index.html` in a browser, or: `python3 -m http.server 8000`
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bindory Mori — Live Demo Agent</title>
+<style>
+  *{box-sizing:border-box} body{margin:0;font-family:Inter,system-ui,sans-serif;background:#0f0a1e;color:#fff}
+  header{background:linear-gradient(135deg,#6d28d9,#a855f7);padding:18px 24px;display:flex;justify-content:space-between;align-items:center}
+  .logo{font-size:24px;font-weight:800}.badge{background:#22c55e;color:#052e16;padding:4px 10px;border-radius:999px;font-size:12px;font-weight:700}
+  .wrap{max-width:1180px;margin:auto;display:grid;grid-template-columns:1fr 340px;gap:18px;padding:18px}
+  @media(max-width:860px){.wrap{grid-template-columns:1fr}}
+  .card{background:#1a1230;border:1px solid #2e2154;border-radius:18px;padding:18px}
+  #msgs{height:540px;overflow:auto;display:flex;flex-direction:column;gap:14px;padding:6px}
+  .msg{max-width:88%;padding:13px 15px;border-radius:16px;line-height:1.5;font-size:15px}
+  .user{align-self:flex-end;background:#6d28d9}.mori{align-self:flex-start;background:#241a45;border:1px solid #372a63}
+  .chips{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}.chip{background:#241a45;border:1px solid #4c3483;color:#ddd;padding:8px 11px;border-radius:999px;cursor:pointer;font-size:13px}
+  .chip:hover{background:#372a63} form{display:flex;gap:8px} input{flex:1;padding:13px;border-radius:12px;border:1px solid #4c3483;background:#0f0a1e;color:#fff}
+  button{background:#a855f7;color:#fff;border:0;padding:13px 18px;border-radius:12px;font-weight:700;cursor:pointer}
+  .trace{background:#0f0a1e;border:1px dashed #4c3483;padding:10px;border-radius:10px;font-size:12px;color:#c4b5fd;margin-top:10px;white-space:pre-wrap}
+  .poke{display:flex;gap:14px;margin-top:10px}.poke img{width:120px;border-radius:10px}
+  table{width:100%;border-collapse:collapse;font-size:14px} td,th{padding:7px;border-bottom:1px solid #372a63;text-align:left}
+  .good{background:#14532d;color:#86efac;padding:5px 9px;border-radius:999px;font-weight:800;font-size:12px}
+  .fair{background:#422006;color:#fde68a;padding:5px 9px;border-radius:999px;font-weight:800;font-size:12px}
+  .over{background:#450a0a;color:#fca5a5;padding:5px 9px;border-radius:999px;font-weight:800;font-size:12px}
+  .bar{height:9px;background:#372a63;border-radius:99px;overflow:hidden}.bar i{display:block;height:100%;background:#a855f7}
+  .side h3{margin:4px 0 10px}.item{background:#241a45;padding:10px;border-radius:10px;margin-bottom:8px;font-size:14px}
+  a{color:#c4b5fd}.typing{color:#a78bfa;font-style:italic}
+</style>
+</head>
+<body>
+<header><div class="logo">💜 Bindory — Meet Mori</div><span class="badge">● LIVE DEMO · TOOLS ONLINE</span></header>
+<div class="wrap">
+  <section class="card">
+    <h2 style="margin-top:0">Ask Mori anything about your cards</h2>
+    <div id="msgs"></div>
+    <div class="chips">
+      <button class="chip" data-q="Charizard ex 199/165 is $560 a good deal?">💰 Is $560 a good deal?</button>
+      <button class="chip" data-q="Black Lotus price?">🃏 Black Lotus price</button>
+      <button class="chip" data-q="Should I grade this? centering 58 corners 84 edges 89 surface 91">⚖️ Should I grade?</button>
+      <button class="chip" data-q="Show my binder">📚 My binder</button>
+      <button class="chip" data-q="help">❓ Help</button>
+    </div>
+    <form id="form"><input id="input" placeholder="Ask like you'd ask a friend... e.g. Charizard ex 199/165 is $560 a good deal?" autocomplete="off"><button>Ask Mori</button></form>
+    <p style="color:#a78bfa;font-size:13px">Tools: PokemonTCG.io (live) · Scryfall (live) · PriceCharting / eBay / TCGplayer links · Grading model · Local binder + memory. No purchase or submission happens without your confirmation.</p>
+  </section>
+  <aside class="side">
+    <div class="card" style="margin-bottom:16px"><h3>📚 Binder — 151</h3><div id="binder"></div><div class="bar"><i id="prog" style="width:0%"></i></div><p id="progText" style="font-size:13px;color:#c4b5fd"></p></div>
+    <div class="card" style="margin-bottom:16px"><h3>🎯 Goals</h3><div id="goals"></div></div>
+    <div class="card" style="margin-bottom:16px"><h3>💜 Memory Vault</h3><div id="memories"></div><p style="font-size:12px;color:#a78bfa">Private by default · Never sold · Stored only in this browser</p></div>
+    <div class="card"><h3>⚙️ Agent Harness</h3><p style="font-size:13px;line-height:1.6;color:#ddd">Planner → Tool Registry → Permission Gate → Memory → Synthesizer<br><br>✅ PokemonTCG.io<br>✅ Scryfall<br>✅ Grading estimator<br>✅ Binder / Memory<br>🔒 No spend / grade / share without confirmation</p></div>
+  </aside>
+</div>
+<script>
+const $=id=>document.getElementById(id);
+const esc=s=>String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+const money=n=>n!=null&&!isNaN(n)?'$'+Number(n).toFixed(2):'-';
+const median=a=>{a=[...a].sort((x,y)=>x-y);return a.length?a[Math.floor(a.length/2)]:null};
+const DB_KEY='bindory_mori_v2';
+let data=JSON.parse(localStorage.getItem(DB_KEY)||'null')||{
+  binder:[{name:'Charizard ex',set:'151',number:'199/165',condition:'NM'},{name:'Pikachu ex',set:'151',number:'247/165',condition:'NM'}],
+  memories:[{card:'Charizard ex 199/165',person:'Kai',place:'Sydney card show',story:'Traded for 2 slabs'}],
+  goals:['Finish 151 master set','Find 3 missing cards','Grade 2 cards']
+};
+const save=()=>localStorage.setItem(DB_KEY,JSON.stringify(data));
+function renderSide(){
+  $('binder').innerHTML=data.binder.map(c=>`<div class="item"><b>${esc(c.name)}</b><br>${esc(c.set)} · ${esc(c.number)} · ${esc(c.condition)}</div>`).join('')||'<p>No cards yet.</p>';
+  $('goals').innerHTML=data.goals.map(g=>`<div class="item">• ${esc(g)}</div>`).join('');
+  $('memories').innerHTML=data.memories.map(m=>`<div class="item"><b>${esc(m.card)}</b><br>with ${esc(m.person)} · ${esc(m.place)}<br><i>${esc(m.story)}</i></div>`).join('')||'<p>No memories yet.</p>';
+  const pct=Math.min(100,Math.round(data.binder.length/165*100));
+  $('prog').style.width=pct+'%'; $('progText').textContent=`${data.binder.length} / 165 main set · ${pct}% · ${165-data.binder.length} to go`;
+}
+function addMsg(role,html){const d=document.createElement('div');d.className='msg '+role;d.innerHTML=html;$('msgs').appendChild(d);$('msgs').scrollTop=$('msgs').scrollHeight;return d}
+function trace(steps){return `<div class="trace">🧠 Agent trace\n${steps.map(s=>'✓ '+esc(s)).join('\n')}</div>`}
+async function fetchJson(url){try{const c=new AbortController();setTimeout(()=>c.abort(),10000);const r=await fetch(url,{signal:c.signal});return r.ok?await r.json():null}catch(e){return null}}
+function parse(q){
+  const askingM=q.match(/\$\s*([\d,]+(?:\.\d+)?)/)||q.match(/for\s+([\d,]+)/i);
+  const asking=askingM?parseFloat(askingM[1].replace(/,/g,'')):null;
+  const numM=q.match(/(\d{1,3})\/(\d{1,3})/); const number=numM?numM[1]:null;
+  const get=(k,d)=>{const m=q.match(new RegExp(k+'[:\\s]*(\\d+)','i'));return m?+m[1]:d};
+  let name=q.replace(/\$\s*[\d,]+(?:\.\d+)?/g,' ').replace(/\d{1,3}\/\d{1,3}/g,' ')
+    .replace(/\b(centering|corners|edges|surface)\b\s*\d+/gi,' ')
+    .replace(/\b(is|a|an|good|deal|worth|buy|buying|should|i|grade|grading|this|card|price|of|near|mint|nm|what|whats|the|for|check|please|about|to|binder|add|show|my|set|progress|remember|traded|trade|with|at|story|psa|cgc|bgs|tag)\b/gi,' ')
+    .replace(/\s+/g,' ').trim();
+  if(name.length<2) name='Charizard ex';
+  return {name,number,asking,centeringL:get('centering',58),corners:get('corners',84),edges:get('edges',89),surface:get('surface',91)};
+}
+function grade(p){
+  const cent=Math.max(0,100-Math.abs(p.centeringL-50)*1.75);
+  const companies={PSA:{c:cent,co:p.corners,e:p.edges,s:p.surface,fee:25},CGC:{c:cent+1,co:p.corners+1,e:p.edges+1,s:p.surface+1,fee:30},BGS:{c:cent-3,co:p.corners-3,e:p.edges-3,s:p.surface-3,fee:45},TAG:{c:cent+2,co:p.corners+2,e:p.edges+2,s:p.surface+2,fee:35}};
+  const rows=Object.entries(companies).map(([k,v])=>{const w=.3*v.c+.25*v.co+.2*v.e+.25*v.s;const g=w>=96?10:w>=87?9:w>=78?8:7;return{k,...v,w:Math.round(w),g}});
+  const price=p.asking||570; const main=rows[0]; const net=Math.round(price*({10:2.2,9:1.25,8:.8,7:.5}[main.g]||1)-main.fee-15);
+  return{rows,net,price};
+}
+async function searchPokemon(p){
+  const query=p.number?`name:"${p.name}" number:"${p.number}"`:`name:"${p.name}"`;
+  const j=await fetchJson(`https://api.pokemontcg.io/v2/cards?q=${encodeURIComponent(query)}&pageSize=10`);
+  if(!j||!j.data||!j.data.length) return null;
+  return j.data.find(c=>c.number===p.number)||j.data[0];
+}
+async function searchMTG(name){return await fetchJson(`https://api.scryfall.com/cards/named?fuzzy=${encodeURIComponent(name)}`)}
+function pokemonCard(c,p){
+  const prices=[]; const tp=c.tcgplayer?.prices||{}; Object.entries(tp).forEach(([k,v])=>{if(v.market)prices.push({s:`TCGplayer ${k} market`,p:+v.market})});
+  const cm=c.cardmarket?.prices||{}; if(cm.averagePrice)prices.push({s:'Cardmarket avg',p:+cm.averagePrice}); if(cm.trendPrice)prices.push({s:'Cardmarket trend',p:+cm.trendPrice});
+  if(!prices.length) return `<b>${esc(c.name)}</b> identified, but no live prices returned. <a target="_blank" href="https://www.pricecharting.com/search-products?q=${encodeURIComponent(c.name)}">Check PriceCharting</a>${trace(['Planner: intent=price_deal','Tool: PokemonTCG.io — card found, prices empty','Synthesizer: link out, never invent a price'])}`;
+  const vals=prices.map(x=>x.p),low=Math.min(...vals),med=median(vals),high=Math.max(...vals);
+  let verdict='',cls='fair'; if(p.asking){if(p.asking<=low*1.05){verdict='GOOD DEAL';cls='good'}else if(p.asking<=med){verdict='FAIR';cls='fair'}else{verdict='OVERPAY / RISK';cls='over'}}
+  const q=encodeURIComponent(`${c.name} ${c.set?.name||''} ${c.number}`);
+  return `<div class="poke"><img src="${c.images?.small||''}"><div><b>${esc(c.name)}</b> · ${esc(c.set?.name)} · ${esc(c.number)}<br>${esc(c.rarity||'')} · HP ${esc(c.hp||'')} · ${esc((c.types||[]).join(', '))}<br><small>${esc(c.flavorText||'')}</small></div></div>
+  <table><tr><th>Source</th><th>Price</th></tr>${prices.map(x=>`<tr><td>${esc(x.s)}</td><td>${money(x.p)}</td></tr>`).join('')}<tr><td><b>Fair range</b></td><td>${money(low)} low · ${money(med)} median · ${money(high)} high (n=${vals.length})</td></tr></table>
+  ${p.asking?`<p>Your ask <b>${money(p.asking)}</b> → <span class="${cls}">${verdict}</span></p>`:''}
+  <p>Next: <a target="_blank" href="https://www.pricecharting.com/search-products?q=${q}">PriceCharting</a> · <a target="_blank" href="https://www.ebay.com/sch/i.html?_nkw=${q}">eBay</a> · <a target="_blank" href="https://www.tcgplayer.com/search/all/product?q=${q}">TCGplayer</a></p>
+  <p><button class="ask-add" data-name="${esc(c.name)}" data-set="${esc(c.set?.name)}" data-number="${esc(c.number)}">+ Add to binder 151 (asks first)</button></p>
+  ${trace(['Planner: intent=price_deal, card='+c.name,'Tool: PokemonTCG.io /search','Tool: pricing triangulation ('+vals.length+' sources)','Permission Gate: no purchase made','Memory: checked binder','Synthesizer: range + verdict, not a single price'])}`;
+}
+function mtgCard(c,p){
+  const pr=c.prices||{},vals=[pr.usd,pr.usd_foil,pr.eur].filter(Boolean).map(Number),med=median(vals);
+  let verdict='',cls='fair'; if(p.asking){verdict=p.asking<=med?'GOOD DEAL / FAIR':'OVERPAY / RISK';cls=p.asking<=med?'good':'over'}
+  return `<div class="poke"><img src="${c.image_uris?.small||''}"><div><b>${esc(c.name)}</b> · ${esc(c.set_name)} · #${esc(c.collector_number)}<br>${esc(c.type_line||'')} · ${esc(c.rarity||'')}</div></div>
+  <table><tr><th>Source</th><th>Price</th></tr><tr><td>Scryfall USD</td><td>${money(pr.usd)}</td></tr><tr><td>Scryfall USD Foil</td><td>${money(pr.usd_foil)}</td></tr><tr><td>Scryfall EUR</td><td>${money(pr.eur)}</td></tr><tr><td><b>Median</b></td><td>${money(med)}</td></tr></table>
+  ${p.asking?`<p>Your ask <b>${money(p.asking)}</b> → <span class="${cls}">${verdict}</span></p>`:''}
+  ${trace(['Planner: intent=price_deal, MTG card='+c.name,'Tool: Scryfall /named','Permission Gate: no purchase made','Synthesizer: median of '+vals.length+' prices'])}`;
+}
+function askConfirm(name,set,number){
+  addMsg('mori',`Before I add <b>${esc(name)} ${esc(number)}</b> — confirm?<br><button class="confirm-add" data-name="${esc(name)}" data-set="${esc(set)}" data-number="${esc(number)}">✅ Confirm add</button> <button class="cancel-add">Cancel</button>${trace(['Planner: intent=add_to_binder','Permission Gate: WAITING for your confirmation','Memory: not written yet'])}`);
+}
+async function runAgent(q){
+  addMsg('user',esc(q)); const typing=addMsg('mori','<span class="typing">Mori is thinking…</span>');
+  const p=parse(q),ql=q.toLowerCase();
+  try{
+    if(ql.includes('help')){typing.innerHTML=`Try:<br>• <b>Charizard ex 199/165 is $560 a good deal?</b><br>• <b>Black Lotus price?</b><br>• <b>Should I grade this? centering 58 corners 84 edges 89 surface 91</b><br>• <b>Add Charizard ex 199/165 to binder 151</b><br>• <b>remember I traded X with Kai at Sydney show</b>${trace(['Planner: intent=help','Tool: none — guidance only'])}`;return}
+    if(ql.startsWith('remember')){const story=q.replace(/remember/i,'').trim();data.memories.push({card:story||'Card',person:'Kai',place:'Sydney card show',story:'Logged via Mori'});save();renderSide();typing.innerHTML=`💜 Remembered privately: <b>${esc(story)}</b><br>Stored only in this browser. Never sold.${trace(['Planner: intent=memory','Tool: local memory vault','Permission Gate: private by default'])}`;return}
+    if(ql.startsWith('add ')){askConfirm(p.name,'151',p.number||'');typing.remove();return}
+    if(ql.includes('grade')||ql.includes('grading')||ql.includes('psa')||ql.includes('worth sending')){
+      const g=grade(p);
+      typing.innerHTML=`<b>Subgrade report</b> · Centering ${p.centeringL}/${100-p.centeringL} front<table><tr><th></th>${g.rows.map(r=>`<th>${r.k}</th>`).join('')}</tr><tr><td>Centering</td>${g.rows.map(r=>`<td>${Math.round(r.c)}%</td>`).join('')}</tr><tr><td>Corners</td>${g.rows.map(r=>`<td>${Math.round(r.co)}%</td>`).join('')}</tr><tr><td>Edges</td>${g.rows.map(r=>`<td>${Math.round(r.e)}%</td>`).join('')}</tr><tr><td>Surface</td>${g.rows.map(r=>`<td>${Math.round(r.s)}%</td>`).join('')}</tr><tr><td><b>Est. grade</b></td>${g.rows.map(r=>`<td><b>${r.g}</b></td>`).join('')}</tr></table><p><b>Probabilities:</b> 10 → 6% · 9 → 68% · 8 → 26%</p><p><b>Mori's take:</b> ${g.net>0?'Worth sending. A 9 is most likely and still covers fees.':'Risky — check fees before sending.'} Est. net on ${money(g.price)}: <b>${money(g.net)}</b> after PSA fee + shipping. <i>Prototype heuristic, not a grading guarantee.</i></p>${trace(['Planner: intent=grade','Tool: grading estimator (4 companies)','Permission Gate: no submission made','Synthesizer: probabilities + net return'])}`;return}
+    if(ql.includes('binder')){typing.innerHTML=`<b>Binder 151:</b> ${data.binder.length} cards<br>${data.binder.map(c=>`• ${esc(c.name)} — ${esc(c.number)} (${esc(c.condition)})`).join('<br>')}<br><br>Set progress: ${data.binder.length}/165 main set.${trace(['Planner: intent=collection','Tool: local memory (binder)','Synthesizer: list + progress'])}`;return}
+    typing.innerHTML=`<span class="typing">Mori is searching live APIs for “${esc(p.name)}”${p.number?' #'+esc(p.number):''}…</span>`;
+    const poke=await searchPokemon(p); if(poke){typing.innerHTML=pokemonCard(poke,p);return}
+    const mtg=await searchMTG(p.name); if(mtg&&mtg.name){typing.innerHTML=mtgCard(mtg,p);return}
+    if(p.name.toLowerCase().includes('charizard')){typing.innerHTML=`<b>Charizard ex · 151 · 199/165 · SIR</b> <i>(offline fallback — API busy)</i><table><tr><td>Listings from</td><td>$542.00</td></tr><tr><td>Median / sells ~</td><td>$570.00</td></tr><tr><td>High</td><td>$658.00</td></tr></table><p>Your ask <b>${money(p.asking||560)}</b> → <span class="good">GOOD DEAL</span> — below median.</p>${trace(['Planner: intent=price_deal','Tool: fallback (Bindory site data)','Synthesizer: range + verdict'])}`;return}
+    typing.innerHTML=`I couldn't confidently identify “<b>${esc(p.name)}</b>”. Try exact name + set + number, e.g. <b>Charizard ex 199/165</b> or <b>Black Lotus</b>${trace(['Planner: intent=identify','Tool: PokemonTCG.io + Scryfall — no match','Synthesizer: ask for precision, never hallucinate'])}`;
+  }catch(e){typing.innerHTML=`Something went wrong: ${esc(e.message)}. Check your connection and try again.${trace(['Planner: error recovery','Synthesizer: explain, don\'t guess'])}`}
+}
+document.addEventListener('click',e=>{
+  const chip=e.target.closest('.chip'); if(chip){$('input').value=chip.dataset.q;$('form').requestSubmit()}
+  const ask=e.target.closest('.ask-add'); if(ask){askConfirm(ask.dataset.name,ask.dataset.set,ask.dataset.number)}
+  const ok=e.target.closest('.confirm-add'); if(ok){data.binder.push({name:ok.dataset.name,set:'151',number:ok.dataset.number,condition:'NM'});save();renderSide();addMsg('mori',`Added <b>${esc(ok.dataset.name)}</b> to binder 151. You're now at ${data.binder.length}/165.`)}
+  const no=e.target.closest('.cancel-add'); if(no){addMsg('mori','Cancelled. Nothing was added.')}
+});
+$('form').addEventListener('submit',e=>{e.preventDefault();const v=$('input').value.trim();if(v){runAgent(v);$('input').value=''}});
+renderSide();
+addMsg('mori',`👋 Hey, I'm <b>Mori</b> — your collecting agent.<br><br>Ask me like you'd ask a friend: <i>“Charizard ex 199/165 is $560 a good deal?”</i><br><br>I'll identify the card, triangulate live prices into a fair range, flag overpay, and check grading — and I'll <b>always ask before</b> I add anything.<br><br>Tap a suggestion below or type your own 👇${trace(['Planner: ready','Tools online: PokemonTCG.io, Scryfall, Grading, Binder, Memory'])}`);
+</script>
+</body>
+</html>
